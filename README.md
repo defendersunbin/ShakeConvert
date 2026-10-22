@@ -1,3 +1,3 @@
 # ShakeConvert
-<img width="1024" height="1024" alt="AppIcon-preview" src="https://github.com/user-attachments/assets/3b7035e5-efde-4a89-8acc-d48c4c2fa02b" /> 
+<img width="256" height="256" alt="app-icon" src="https://github.com/user-attachments/assets/6b665657-2bb1-4034-8185-3c05d7c7337e" />
 Shake your file: Convert to any format you need
