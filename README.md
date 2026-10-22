@@ -61,27 +61,6 @@
 | JPEG · HEIC 품질 | 60 ~ 100% |
 | 문서 → PDF 용지 | A4 / Letter |
 
-## 빌드 & 설치용 DMG 만들기
-
-macOS 14 이상, Xcode 또는 Command Line Tools 필요.
-
-```bash
-./scripts/build_dmg.sh        # → dist/ShakeConvert-<버전>.dmg (유니버설)
-```
-
-![설치 창](docs/images/dmg.png)
-
-- 처음 실행 시 "터미널이 Finder를 제어" 허용 창이 뜰 수 있습니다 (DMG 창 배경·아이콘 배치에 필요). 거부해도 DMG는 만들어지지만 배치가 적용되지 않습니다.
-- 앱만 필요하면 `./scripts/build_app.sh` → `build/ShakeConvert.app`
-- DMG 창 배경은 Finder가 보여주는 정적 이미지라 언어별로 바꿀 수 없습니다. 그래서 문장 없이 아이콘·화살표·형식 이름만으로 디자인했고, 언어별 안내는 앱이 처음 실행될 때 사용자의 언어로 표시됩니다.
-
-### 서명과 Gatekeeper
-
-| 방식 | 명령 | 다른 Mac에서 열 때 |
-|---|---|---|
-| ad-hoc (기본, 개인용) | `./scripts/build_dmg.sh` | 처음 열 때 차단됨 → 시스템 설정 › 개인정보 보호 및 보안 › 맨 아래 "그래도 열기" → 암호 입력 (macOS 15부터 우클릭 › 열기로는 우회 불가) |
-| Developer ID + 공증 (배포용) | `SIGN_ID="Developer ID Application: 이름 (TEAMID)" NOTARY_PROFILE=프로필 ./scripts/build_dmg.sh` | 경고 없이 실행 |
-
 ## 보안
 
 - 네트워크·WebKit·외부 프로세스 실행 없음, 원본은 읽기만, 덮어쓰기 없음
