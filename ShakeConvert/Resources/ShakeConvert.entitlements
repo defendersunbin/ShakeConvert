@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened Runtime 기본값 유지: JIT/라이브러리 검증 해제/DYLD 변수 허용 등 예외를 일절 요청하지 않음 -->
+</dict>
+</plist>
