@@ -5,7 +5,7 @@ Finder에서 파일을 잡은 채 **좌우로 흔들면**, 잡고 있는 커서�
 
 | 다크 | 라이트 |
 |---|---|
-| ![다크 모드] <img width="340" height="418" alt="shakeconvert_dark" src="https://github.com/user-attachments/assets/1e8952e6-2d27-430e-a1e6-b7cf08564c3d" /> | ![라이트 모드] <img width="340" height="418" alt="shakeconvert_light" src="https://github.com/user-attachments/assets/eae2fb98-741a-4e3e-8690-47f801942f8c" /> |
+| <img width="340" height="418" alt="shakeconvert_dark" src="https://github.com/user-attachments/assets/1e8952e6-2d27-430e-a1e6-b7cf08564c3d" /> | <img width="340" height="418" alt="shakeconvert_light" src="https://github.com/user-attachments/assets/eae2fb98-741a-4e3e-8690-47f801942f8c" /> |
 
 ## 특징
 
