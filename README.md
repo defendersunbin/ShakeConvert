@@ -21,7 +21,7 @@
 - 자연스러운 문서 변환: txt·md → PDF는 머리글·바닥글·쪽 번호·구분선이 있는 문서로, 코드는 상자, 인용은 막대, 표는 테두리로 조판
 - 라이트 / 다크 / 시스템 테마
 - 8개 언어: 한국어, English, 日本語, 简体中文, 繁體中文, Español, Français, Deutsch — 시스템 언어를 자동으로 따르고 설정에서 바꿀 수도 있음
-- Apple Silicon + Intel 유니버설 앱, 디자인된 설치용 DMG
+- Apple Silicon + Intel 유니버설 앱
 
 ## 사용법
 
@@ -37,8 +37,8 @@
 | 입력 | 출력 |
 |---|---|
 | 이미지 (HEIC, JPEG, PNG, TIFF, GIF, BMP, JPEG 2000, RAW 등) | JPEG, PNG, HEIC, PDF, SVG\*, TIFF, GIF, BMP, JPEG 2000 |
-| 마크다운 (md) | PDF(조판), HTML(스타일·라이트/다크 대응), Word, RTF, 텍스트 |
-| 텍스트 (txt) | PDF(조판), HTML, Word, RTF |
+| 마크다운 (md) | PDF, HTML, Word, RTF, 텍스트 |
+| 텍스트 (txt) | PDF, HTML, Word, RTF |
 | RTF / Word (docx) | PDF(조판), HTML, Word/RTF, 텍스트 |
 | PDF | PNG/JPEG (페이지별), 텍스트 (페이지 구분선 포함) |
 | 오디오 | M4A, WAV, AIFF, CAF |
@@ -84,8 +84,6 @@ macOS 14 이상, Xcode 또는 Command Line Tools 필요.
 
 ## 보안
 
-자세한 내용은 [SECURITY.md](SECURITY.md). 요약하면:
-
 - 네트워크·WebKit·외부 프로세스 실행 없음, 원본은 읽기만, 덮어쓰기 없음
 - `scripts/audit.sh`가 빌드와 CI마다 보안 규칙을 검사하고 어기면 빌드 실패
 - `scripts/check_l10n.py`가 번역 누락과 형식 지정자 불일치(형식 문자열 취약점)를 검사
@@ -122,7 +120,6 @@ scripts/                 빌드, DMG, 보안 검사, 번역 생성·검사, 아�
 
 ## 차후 수정
 
-- 컴파일과 실제 동작은 macOS에서만 확인할 수 있습니다 (CI가 macOS 러너에서 빌드를 검증합니다)
 - 3채널 이상 오디오의 WAV/AIFF/CAF 변환, 암호 PDF는 미지원
 - 애니메이션 GIF는 첫 프레임만 변환
 - 문서 → Word 변환 시 표·코드 상자 같은 일부 서식은 Word에서 단순화될 수 있음
