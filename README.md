@@ -68,15 +68,6 @@
 - `scripts/check_l10n.py`가 번역 누락과 형식 지정자 불일치(형식 문자열 취약점)를 검사
 - GitHub Actions(CI)가 푸시마다 보안 검사 → 번역 검사 → 유니버설 빌드 → 서명 확인
 
-## 번역 수정·추가
-
-번역 원본은 `scripts/translations.py` 한 곳입니다. 수정 후:
-
-```bash
-python3 scripts/translations.py Resources/Localization
-python3 scripts/check_l10n.py
-```
-
 ## 프로젝트 구조
 
 ```
