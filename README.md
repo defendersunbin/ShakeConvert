@@ -77,8 +77,6 @@ macOS 14 이상, Xcode 또는 Command Line Tools 필요.
 | ad-hoc (기본, 개인용) | `./scripts/build_dmg.sh` | 처음 열 때 차단됨 → 시스템 설정 › 개인정보 보호 및 보안 › 맨 아래 **"그래도 열기"** → 암호 입력 (macOS 15부터 우클릭 › 열기로는 우회 불가) |
 | Developer ID + 공증 (배포용) | `SIGN_ID="Developer ID Application: 이름 (TEAMID)" NOTARY_PROFILE=프로필 ./scripts/build_dmg.sh` | 경고 없이 실행 |
 
-공증에는 유료 Apple Developer Program 가입이 필요합니다. GitHub Releases에 DMG를 올릴 때는 빌드 스크립트가 출력하는 SHA-256 값을 함께 적어 두세요.
-
 ## 보안
 
 자세한 내용은 [SECURITY.md](SECURITY.md). 요약하면:
