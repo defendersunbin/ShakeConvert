@@ -1,2 +1,3 @@
-# <img width="32" height="32" alt="icon_16x16@2x" src="https://github.com/user-attachments/assets/fef9eb26-853f-4d45-8358-92cf35fb3be5" /> <img width="32" height="32" alt="icon_32x32" src="https://github.com/user-attachments/assets/e43ff9b0-3438-4d16-aad4-8a431c91a4a9" /> <img width="128" height="128" alt="icon_128x128" src="https://github.com/user-attachments/assets/86375835-c938-4ccb-bc0f-d5f324a8f16f" /> ShakeConvert
+# ShakeConvert
 Shake your file: Convert to any format you need
+<img width="1024" height="1024" alt="AppIcon-preview" src="https://github.com/user-attachments/assets/3b7035e5-efde-4a89-8acc-d48c4c2fa02b" /> 
