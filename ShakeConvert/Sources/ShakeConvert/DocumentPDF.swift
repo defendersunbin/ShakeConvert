@@ -32,18 +32,17 @@ struct ParaStyle {
 
 enum DocumentPDF {
     static let maxPages = 3000
-    static let maxCharacters = 10_000_000
-
+    
     // MARK: 조각
 
-    private enum DecoKind { case codeBox, quoteBar }
+    fileprivate enum DecoKind { case codeBox, quoteBar }
 
-    private struct Deco {
+    fileprivate struct Deco {
         let id: Int
         let kind: DecoKind
     }
 
-    private struct Fragment {
+    fileprivate struct Fragment {
         var height: CGFloat
         var isSpacer = false            // 페이지 맨 위나 페이지 끝에서는 버려도 되는 간격
         var keepWithNext: CGFloat = 0   // 이 조각 뒤에 최소한 이만큼 공간이 있어야 같은 페이지에 둠 (제목)
@@ -53,7 +52,7 @@ enum DocumentPDF {
         var draw: (CGContext, CGFloat, CGFloat) -> Void = { _, _, _ in }
     }
 
-    private struct Placed {
+    fileprivate struct Placed {
         let fragment: Fragment
         let top: CGFloat
     }
@@ -418,7 +417,7 @@ enum DocumentPDF {
             string: s, attributes: [.font: font, .foregroundColor: DocStyle.dim])))
     }
 
-    private static func drawChrome(ctx: CGContext, page: Int, total: Int, title: String, date: String,
+    private static func drawChrome(ctx: CGContext, page: Int, total: Int?, title: String, date: String,
                                    paper: CGSize, left: CGFloat, right: CGFloat, top: CGFloat, bottom: CGFloat) {
         // 머리글: 포인트 막대 + 제목(왼쪽) · 날짜(오른쪽) + 구분선
         let headerRule = top + 14
@@ -435,7 +434,7 @@ enum DocumentPDF {
         // 바닥글: 구분선 + 가운데 쪽 번호
         let footerRule = bottom - 20
         hline(ctx, x: left, width: right - left, y: footerRule, weight: 0.5, color: DocStyle.rule)
-        let pageLine = chromeLine("\(page) / \(total)", digits: true)
+        let pageLine = chromeLine(total.map { "\(page) / \($0)" } ?? "\(page)", digits: true)
         drawLine(pageLine, ctx: ctx, x: (paper.width - metrics(pageLine).width) / 2, baseline: footerRule - 14)
     }
 }
@@ -465,5 +464,136 @@ extension DocumentPDF {
             out.append(.paragraph(sub, style: style))
         }
         return out
+    }
+}
+
+
+// MARK: - 대용량 문서: 페이지를 만드는 즉시 파일에 써 내려가는 조판기
+
+extension DocumentPDF {
+    /// 블록을 차례로 받아 페이지가 차면 바로 PDF에 기록하고 메모리에서 비운다.
+    /// 문서 길이와 상관없이 메모리에는 "지금 쓰는 한 쪽 + 한 번에 받은 블록 묶음"만 남는다.
+    /// 전체 쪽수는 끝나기 전에는 알 수 없으므로 바닥글에는 "n"만 표시한다.
+    final class StreamWriter {
+        private static let marginTop: CGFloat = 78
+        private static let marginBottom: CGFloat = 74
+        private static let marginLeft: CGFloat = 64
+        private static let marginRight: CGFloat = 64
+
+        private let paper: CGSize
+        private let width: CGFloat
+        private let top: CGFloat
+        private let bottom: CGFloat = StreamWriter.marginBottom
+        private let ctx: CGContext
+        private let title: String
+        private let dateText: String
+        private let bodyRect: CGRect
+        private var page: [Placed] = []
+        private var cursor: CGFloat
+        private var pageNumber = 0
+        private var decoCounter = 0
+        private var closed = false
+        private let directory: URL
+
+        init(url: URL, title: String) throws {
+            directory = url.deletingLastPathComponent()
+            let size = Prefs.paperSize.size
+            paper = size
+            width = size.width - Self.marginLeft - Self.marginRight
+            top = size.height - Self.marginTop
+            cursor = size.height - Self.marginTop
+            self.title = title
+            bodyRect = CGRect(x: Self.marginLeft - 2, y: Self.marginBottom - 2,
+                              width: size.width - Self.marginLeft - Self.marginRight + 4,
+                              height: size.height - Self.marginTop - Self.marginBottom + 4)
+            var box = CGRect(origin: .zero, size: size)
+            let info: [CFString: Any] = [kCGPDFContextTitle: title, kCGPDFContextCreator: "ShakeConvert"]
+            guard let c = CGContext(url as CFURL, mediaBox: &box, info as CFDictionary) else {
+                throw ConvertError.writeFailed("")
+            }
+            ctx = c
+            let date = DateFormatter()
+            date.locale = Locale(identifier: AppLanguage.current)
+            date.dateStyle = .medium
+            date.timeStyle = .none
+            dateText = date.string(from: Date())
+        }
+
+        var pagesWritten: Int { pageNumber }
+
+        func add(_ blocks: [DocBlock]) throws {
+            for block in blocks {
+                try checkCancelled()
+                for fragment in DocumentPDF.makeFragments(block, width: width, nextDeco: &decoCounter) {
+                    try place(fragment)
+                }
+            }
+        }
+
+        func finish() throws {
+            if pageNumber == 0 && page.isEmpty {
+                try add([.paragraph(NSAttributedString(string: " "), style: ParaStyle())])
+            }
+            if !page.isEmpty { try flush() }
+            if !closed { ctx.closePDF(); closed = true }
+        }
+
+        /// 오류·취소 시 열린 PDF를 닫는다.
+        func abort() {
+            if !closed { ctx.closePDF(); closed = true }
+        }
+
+        private func place(_ f: Fragment) throws {
+            let pageEmpty = page.isEmpty
+            if f.isSpacer && pageEmpty { return }
+            let need = f.height + (f.isSpacer ? 0 : f.keepWithNext)
+            if cursor - need < bottom && !pageEmpty {
+                if f.isSpacer { return }
+                try flush()
+            }
+            page.append(Placed(fragment: f, top: cursor))
+            cursor -= f.height
+        }
+
+        private func flush() throws {
+            try checkCancelled()
+            if pageNumber % 50 == 0 { // 디스크가 가득 차기 전에 깔끔하게 중단
+                do { try DiskGuard.check(directory) } catch { abort(); throw error }
+            }
+            pageNumber += 1
+            ctx.beginPDFPage(nil)
+            ctx.textMatrix = .identity
+            ctx.saveGState()
+            ctx.clip(to: bodyRect)
+            DocumentPDF.drawDecorations(page, ctx: ctx, left: Self.marginLeft, width: width)
+            for p in page { p.fragment.draw(ctx, Self.marginLeft, p.top) }
+            ctx.restoreGState()
+            DocumentPDF.drawChrome(ctx: ctx, page: pageNumber, total: nil, title: title, date: dateText,
+                                   paper: paper, left: Self.marginLeft, right: paper.width - Self.marginRight,
+                                   top: top, bottom: bottom)
+            ctx.endPDFPage()
+            page.removeAll(keepingCapacity: true)
+            cursor = top
+        }
+    }
+
+    /// 이미 메모리에 있는 블록(RTF/DOCX 입력 등)을 묶음으로 나눠 스트리밍 조판기에 넣는다.
+    static func renderStreaming(blocks: [DocBlock], title: String, to url: URL,
+                                progress: ProgressHandler = { _ in }) throws {
+        let writer = try StreamWriter(url: url, title: title)
+        do {
+            var start = 0
+            while start < blocks.count {
+                try checkCancelled()
+                let end = min(start + 500, blocks.count)
+                try writer.add(Array(blocks[start..<end]))
+                progress(Double(end) / Double(blocks.count))
+                start = end
+            }
+            try writer.finish()
+        } catch {
+            writer.abort()
+            throw error
+        }
     }
 }

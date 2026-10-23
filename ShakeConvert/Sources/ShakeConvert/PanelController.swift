@@ -36,6 +36,10 @@ final class PanelController {
             }
         }
         model.onClose = { [weak self] in self?.dismiss() }
+        model.onNeedsPassword = { [weak self] in
+            self?.cancelScheduledClose() // 암호를 입력하는 동안에는 자동으로 닫지 않음
+            self?.focusSearch()
+        }
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -98,7 +102,7 @@ final class PanelController {
         hideTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
-            if self.model.busy || (self.model.isIdle && self.model.showsList) { return }
+            if self.model.busy || self.model.awaitingPassword || (self.model.isIdle && self.model.showsList) { return }
             if onlyIfIdle && !self.model.isIdle { return }
             self.dismiss()
         }
@@ -148,7 +152,7 @@ final class PanelController {
         // 다른 앱을 클릭하면 닫기
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
             Task { @MainActor in
-                guard let self, let panel = self.panel, !self.model.busy else { return }
+                guard let self, let panel = self.panel, !self.model.busy, !self.model.awaitingPassword else { return }
                 if !panel.frame.contains(NSEvent.mouseLocation) { self.dismiss() }
             }
         }) { monitors.append(m) }

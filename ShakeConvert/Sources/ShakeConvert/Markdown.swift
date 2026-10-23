@@ -465,6 +465,11 @@ enum MarkdownRenderer {
     }
 
     static func html(_ blocks: [MDBlock], title: String) -> String {
+        HTMLTemplate.page(title: title, body: htmlBody(blocks))
+    }
+
+    /// 본문만 (큰 문서를 조각 단위로 변환할 때 사용)
+    static func htmlBody(_ blocks: [MDBlock]) -> String {
         var body = ""
         for block in blocks {
             switch block {
@@ -494,7 +499,7 @@ enum MarkdownRenderer {
                 body += "</tbody></table>\n"
             }
         }
-        return HTMLTemplate.page(title: title, body: body)
+        return body
     }
 
     // MARK: 일반 텍스트
@@ -573,17 +578,28 @@ enum PlainRenderer {
     }
 
     static func html(_ text: String, title: String) -> String {
+        HTMLTemplate.page(title: title, body: htmlBody(text))
+    }
+
+    static func htmlBody(_ text: String) -> String {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let paragraphs = normalized.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .newlines) }
             .filter { !$0.isEmpty }
             .map { "<p>" + MarkdownRenderer.escape($0).replacingOccurrences(of: "\n", with: "<br>") + "</p>" }
-        return HTMLTemplate.page(title: title, body: paragraphs.joined(separator: "\n"))
+        return paragraphs.joined(separator: "\n")
     }
 }
 
 enum HTMLTemplate {
     static func page(title: String, body: String) -> String {
+        head(title: title) + "\n" + body + tail
+    }
+
+    static let tail = "\n</main></body>\n</html>"
+
+    /// 본문 앞부분 (문서 머리글까지). 큰 문서는 head + 본문 조각들 + tail 순서로 써 내려간다.
+    static func head(title: String) -> String {
         """
         <!doctype html>
         <html lang="\(AppLanguage.current)">
@@ -619,9 +635,6 @@ enum HTMLTemplate {
         </head>
         <body><main>
         <header class="doc">\(MarkdownRenderer.escape(title))</header>
-        \(body)
-        </main></body>
-        </html>
         """
     }
 }

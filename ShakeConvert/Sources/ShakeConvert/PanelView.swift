@@ -345,6 +345,8 @@ private struct RingStatus: View {
                     done(target: target, e: ctx.date.timeIntervalSince(since))
                 case let .failed(_, _, target, since):
                     failed(target: target, e: ctx.date.timeIntervalSince(since))
+                case let .needsPassword(_, _, target, since, wrong):
+                    locked(target: target, e: ctx.date.timeIntervalSince(since), wrong: wrong)
                 }
             }
         }
@@ -437,6 +439,33 @@ private struct RingStatus: View {
         }
     }
 
+    // 암호 필요: 자물쇠가 있는 링. 암호가 틀리면 붉게 바뀌며 좌우로 흔들림
+    private func locked(target: OutputFormat, e: Double, wrong: Bool) -> some View {
+        let decay = 1 - Ease.clamp(e / 0.6)
+        let shake = wrong ? sin(e * 42) * 8 * decay : 0
+        let pulse = 0.5 + 0.5 * sin(e * 3)
+        let tint = wrong ? Theme.danger : Theme.accent
+
+        return ZStack {
+            Circle()
+                .stroke(tint.opacity(0.3 + 0.3 * pulse), lineWidth: 10)
+                .frame(width: Ring.track * 2, height: Ring.track * 2)
+            ZStack {
+                Circle().fill(Theme.hub)
+                VStack(spacing: 5) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(target.ext.uppercased())
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Theme.textDim)
+                }
+            }
+            .frame(width: Ring.hub * 2, height: Ring.hub * 2)
+        }
+        .offset(x: shake)
+    }
+
     // 실패: 붉은 링 + X 표시, 좌우로 흔들림
     private func failed(target: OutputFormat, e: Double) -> some View {
         let decay = 1 - Ease.clamp(e / 0.6)
@@ -523,6 +552,8 @@ private struct Caption: View {
                         .buttonStyle(.plain)
                     }
                 }
+            case let .needsPassword(file, _, _, _, wrong):
+                PasswordBar(model: model, file: file, wrong: wrong)
             case let .failed(message, _, _, _):
                 chip {
                     HStack(spacing: 10) {
@@ -553,6 +584,52 @@ private struct Caption: View {
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.panel))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
             .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+    }
+}
+
+// MARK: - 암호 입력 (암호가 걸린 PDF)
+
+private struct PasswordBar: View {
+    @ObservedObject var model: PanelModel
+    let file: String
+    let wrong: Bool
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(wrong ? Theme.danger : Theme.accent)
+            SecureField("", text: $model.passwordInput,
+                        prompt: Text(wrong ? L("암호가 맞지 않습니다") : L("암호 입력"))
+                            .foregroundColor(wrong ? Theme.danger : Theme.textDim))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.text)
+                .focused($focused)
+                .frame(width: 118)
+                .onSubmit { model.submitPassword() }
+            Button { model.submitPassword() } label: {
+                Text(L("잠금 해제"))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(model.passwordInput.isEmpty ? Theme.textDim : Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.passwordInput.isEmpty)
+            Button { model.cancelPassword() } label: {
+                Text(L("취소")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.textDim)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(wrong ? Theme.danger.opacity(0.7) : (focused ? Theme.accent.opacity(0.7) : Theme.hairline), lineWidth: 1))
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        .help(file)
+        .onAppear { focused = true }
+        .onChange(of: model.focusTick) { focused = true }
     }
 }
 

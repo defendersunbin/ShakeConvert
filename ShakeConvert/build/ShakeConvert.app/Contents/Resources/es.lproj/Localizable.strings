@@ -97,4 +97,10 @@
 "Finder에서 ShakeConvert를 응용 프로그램 폴더로 직접 끌어다 놓아 주세요." = "Arrastra ShakeConvert a la carpeta Aplicaciones en el Finder.";
 "응용 프로그램 폴더에 같은 이름의 다른 앱이 있어 옮기지 않았습니다." = "Ya hay otra app con el mismo nombre en la carpeta Aplicaciones, así que no se movió nada.";
 "복사본의 서명을 확인할 수 없어 설치를 취소했습니다." = "No se pudo verificar la firma de la copia, así que se canceló la instalación.";
+"암호 입력" = "Contraseña";
+"잠금 해제" = "Desbloquear";
+"취소" = "Cancelar";
+"암호가 맞지 않습니다" = "Contraseña incorrecta";
+"저장 공간이 부족합니다" = "No hay suficiente espacio libre";
+"메모리가 부족해 변환할 수 없습니다" = "No hay memoria suficiente para convertir este archivo";
 "확인" = "Aceptar";

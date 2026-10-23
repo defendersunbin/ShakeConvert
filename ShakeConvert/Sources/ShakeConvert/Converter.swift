@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import ImageIO
 import PDFKit
+import Vision
 import AVFoundation
 import CoreMedia
 import CoreText
@@ -17,6 +18,9 @@ enum ConvertError: LocalizedError {
     case unsupported(String)
     case readFailed
     case locked
+    case wrongPassword
+    case notEnoughSpace
+    case notEnoughMemory
     case writeFailed(String)
 
     var errorDescription: String? {
@@ -28,6 +32,9 @@ enum ConvertError: LocalizedError {
         case .unsupported(let m): return m.isEmpty ? L("지원하지 않는 변환입니다") : m
         case .readFailed: return L("파일을 읽을 수 없습니다")
         case .locked: return L("암호로 보호된 파일입니다")
+        case .wrongPassword: return L("암호가 맞지 않습니다")
+        case .notEnoughSpace: return L("저장 공간이 부족합니다")
+        case .notEnoughMemory: return L("메모리가 부족해 변환할 수 없습니다")
         case .writeFailed(let m): return m.isEmpty ? L("결과 파일을 저장하지 못했습니다") : L("저장 실패: %@", m)
         }
     }
@@ -44,13 +51,14 @@ func checkCancelled() throws {
 enum Converter {
     /// 변환 후 생성된 파일 URL 목록을 반환한다 (원본은 절대 수정/삭제하지 않음).
     /// 화면이 멈추지 않도록 반드시 메인 스레드가 아닌 곳에서 호출한다 (PanelModel이 별도 작업으로 실행).
-    static func convert(_ url: URL, to format: OutputFormat,
+    static func convert(_ url: URL, to format: OutputFormat, password: String? = nil,
                         progress: @escaping ProgressHandler = { _ in }) async throws -> [URL] {
         guard let category = Catalog.kind(of: url), category == format.category else {
             throw ConvertError.unsupported(L("%@: 이 형식으로는 변환할 수 없습니다", url.lastPathComponent))
         }
         try validateInput(url, category: category)
         try checkCancelled()
+        if category == .audio || category == .video { try ensureFreeSpace(forInput: url) }
 
         let work = try makeWorkDir()
         defer { try? FileManager.default.removeItem(at: work) }
@@ -68,7 +76,7 @@ enum Converter {
             return [try finalize(out, source: url, suffix: "", ext: format.ext)]
 
         case .pdf:
-            let pieces = try PDFConverter.convert(url, format: format, work: work, progress: progress)
+            let pieces = try PDFConverter.convert(url, format: format, work: work, password: password, progress: progress)
             try checkCancelled()
             return try pieces.map { try finalize($0.file, source: url, suffix: $0.suffix, ext: format.ext) }
 
@@ -101,7 +109,17 @@ enum Converter {
         guard url.isFileURL else { throw ConvertError.notRegularFile }
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
         if values.isSymbolicLink == true || values.isRegularFile != true { throw ConvertError.notRegularFile }
-        if let size = values.fileSize, Int64(size) > category.maxInputBytes { throw ConvertError.tooLarge }
+        // 파일 크기에는 상한을 두지 않는다. 큰 텍스트·마크다운은 조각 단위로(StreamingText), 영상·오디오·PDF는 조금씩 읽어 처리한다.
+    }
+
+    /// 임시 작업 폴더가 있는 볼륨에 원본 크기만큼은 비어 있는지 확인 (가득 차서 중간에 실패하는 것 방지)
+    static func ensureFreeSpace(forInput url: URL) throws {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              let free = try? FileManager.default.temporaryDirectory
+                .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+                .volumeAvailableCapacityForImportantUsage
+        else { return } // 확인할 수 없으면 막지 않음
+        if free < Int64(size) + 256 * 1024 * 1024 { throw ConvertError.notEnoughSpace }
     }
 
     // MARK: 출력 처리
@@ -165,7 +183,7 @@ enum Converter {
                 return placed
             }
         }
-        throw ConvertError.writeFailed(lastError?.localizedDescription ?? "")
+        throw lastError.map { ConvertError.wrapping($0) } ?? ConvertError.writeFailed("")
     }
 
     /// 대상이 있으면(심볼릭 링크 포함) EEXIST로 실패하는 원자적 이름 변경
@@ -209,7 +227,12 @@ enum ImageConverter {
 
         // 조작된 헤더의 거대한 가로·세로 값으로 곱셈이 넘쳐 앱이 죽지 않도록 오버플로를 검사
         let (pixels, overflow) = w.multipliedReportingOverflow(by: h)
-        if overflow || pixels > 250_000_000 { throw ConvertError.tooManyPixels }
+        if overflow { throw ConvertError.tooManyPixels }
+        // 고정 상한 대신 이 Mac의 메모리에 맞춘 예산: 해독본(화소당 약 8바이트) + 인코딩 작업본을 합쳐 메모리의 70%까지
+        let (need, needOverflow) = pixels.multipliedReportingOverflow(by: 16)
+        if needOverflow || UInt64(need) > ProcessInfo.processInfo.physicalMemory / 10 * 7 {
+            throw ConvertError.notEnoughMemory
+        }
 
         // 썸네일 API를 원본 크기로 호출하면 EXIF 회전이 적용된 이미지를 얻고, 메타데이터(GPS 등)는 결과에 이어지지 않는다.
         let thumbOpts: [CFString: Any] = [
@@ -322,6 +345,12 @@ enum TextConverter {
         progress(0.02)
         defer { progress(1) }
         do {
+            // 큰 텍스트·마크다운: 조각 단위로 읽고 변환해 바로 저장 → 크기와 상관없이 같은 방식으로 끝까지 처리
+            if ext != "rtf", ext != "docx", StreamingText.shouldStream(url) {
+                try StreamingText.convert(url, markdown: ext == "md" || ext == "markdown", key: key,
+                                          title: title, to: out, progress: progress)
+                return
+            }
             switch ext {
             case "md", "markdown":
                 let blocks = MarkdownParser.parse(try readText(url))
@@ -334,10 +363,21 @@ enum TextConverter {
                 }
 
             case "rtf", "docx":
+                // 큰 문서: 메모리에 통째로 올리지 않고 문단 단위로 읽어 바로 변환 (글자와 기본 서식 중심)
+                if StreamingRich.shouldStream(url, ext: ext) {
+                    try StreamingRich.convert(url, ext: ext, key: key, title: title, to: out, progress: progress)
+                    return
+                }
                 // 신뢰할 수 없는 문서: 위험한 링크(javascript:, file: 등)와 HTML에서의 첨부를 제거
                 let attributed = RichTextSanitizer.clean(try loadRich(url, ext: ext), forHTML: key == "html")
                 switch key {
-                case "pdf": try DocumentPDF.render(blocks: DocumentPDF.blocks(from: attributed), title: title, to: out, progress: renderProgress)
+                case "pdf":
+                    let blocks = DocumentPDF.blocks(from: attributed)
+                    if attributed.length > 1_500_000 { // 긴 문서는 쪽을 만드는 대로 바로 기록
+                        try DocumentPDF.renderStreaming(blocks: blocks, title: title, to: out, progress: renderProgress)
+                    } else {
+                        try DocumentPDF.render(blocks: blocks, title: title, to: out, progress: renderProgress)
+                    }
                 case "txt": try writeString(attributed.string, to: out)
                 default: try writeAttributed(attributed, key: key, to: out)
                 }
@@ -356,21 +396,18 @@ enum TextConverter {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw ConvertError.writeFailed(error.localizedDescription)
+            throw ConvertError.wrapping(error)
         }
     }
 
     static func readText(_ url: URL) throws -> String {
-        let text = decode(try Data(contentsOf: url, options: .mappedIfSafe))
-        guard text.utf16.count <= DocumentPDF.maxCharacters else { throw ConvertError.tooManyPages }
-        return text
+        decode(try Data(contentsOf: url, options: .mappedIfSafe))
     }
 
     static func loadRich(_ url: URL, ext: String) throws -> NSAttributedString {
+        // 큰 문서는 여기까지 오지 않고 StreamingRich가 조각 단위로 처리한다 (작은 문서만 시스템 로더 사용)
         let type: NSAttributedString.DocumentType = ext == "rtf" ? .rtf : .officeOpenXML
-        let text = try NSAttributedString(url: url, options: [.documentType: type], documentAttributes: nil)
-        guard text.length <= DocumentPDF.maxCharacters else { throw ConvertError.tooManyPages }
-        return text
+        return try NSAttributedString(url: url, options: [.documentType: type], documentAttributes: nil)
     }
 
     /// UTF-8 → UTF-16 → CP949(한글 Windows) → Latin-1 순서로 디코딩 시도
@@ -454,40 +491,85 @@ enum RichTextSanitizer {
 enum PDFConverter {
     struct Piece { let file: URL; let suffix: String }
 
-    static func convert(_ url: URL, format: OutputFormat, work: URL, progress: ProgressHandler) throws -> [Piece] {
-        guard let doc = PDFDocument(url: url) else { throw ConvertError.readFailed }
-        if doc.isLocked { throw ConvertError.locked }
+    /// 페이지마다 글자를 꺼내 파일에 바로 이어 쓴다(전체를 메모리에 모으지 않음).
+    /// 글자가 없는 페이지(스캔본)는 macOS 내장 Vision으로 기기 안에서 글자를 인식한다.
+    static func extractText(from doc: PDFDocument, to out: URL, progress: ProgressHandler) throws {
+        let count = doc.pageCount
+        guard count > 0 else { throw ConvertError.readFailed }
+        guard FileManager.default.createFile(atPath: out.path, contents: nil, attributes: [.posixPermissions: 0o600]),
+              let handle = try? FileHandle(forWritingTo: out)
+        else { throw ConvertError.writeFailed("") }
+        defer { try? handle.close() }
 
-        if format.key == "txt" {
-            guard doc.pageCount <= 5000 else { throw ConvertError.tooManyPages }
-            let out = work.appendingPathComponent("out.txt")
-            // 페이지마다 구분선을 넣어 어디서 페이지가 바뀌는지 알 수 있게
-            var parts: [String] = []
-            for i in 0..<doc.pageCount {
-                try checkCancelled()
-                progress(Double(i + 1) / Double(doc.pageCount))
-                let pageText = (doc.page(at: i)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                if doc.pageCount > 1 { parts.append("──────── " + L("페이지 %ld / %ld", i + 1, doc.pageCount) + " ────────") }
-                parts.append(pageText)
-                parts.append("")
+        for i in 0..<count {
+            try checkCancelled()
+            var chunk = ""
+            autoreleasepool {
+                guard let page = doc.page(at: i) else { return }
+                var text = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.isEmpty { text = recognizeText(on: page) }
+                if count > 1 { chunk += "──────── " + L("페이지 %ld / %ld", i + 1, count) + " ────────\n" }
+                chunk += text + "\n\n"
             }
-            let text = parts.joined(separator: "\n")
-            do { try text.write(to: out, atomically: false, encoding: .utf8) }
-            catch { throw ConvertError.writeFailed(error.localizedDescription) }
+            if i % 50 == 0 { try DiskGuard.check(out.deletingLastPathComponent()) }
+            do { try handle.write(contentsOf: Data(chunk.utf8)) }
+            catch { throw ConvertError.wrapping(error) }
+            progress(Double(i + 1) / Double(count))
+        }
+    }
+
+    /// 스캔 페이지의 글자 인식. 인식 결과가 없거나 실패하면 빈 문자열.
+    private static func recognizeText(on page: PDFPage) -> String {
+        let box = page.bounds(for: .mediaBox)
+        guard box.width > 0, box.height > 0 else { return "" }
+        let scale = min(3, 2800 / max(box.width, box.height))
+        let size = CGSize(width: box.width * scale, height: box.height * scale)
+        let image = page.thumbnail(of: size, for: .mediaBox)
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return "" }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
+        do { try VNImageRequestHandler(cgImage: cg, options: [:]).perform([request]) }
+        catch { return "" }
+        return (request.results ?? [])
+            .compactMap { $0.topCandidates(1).first?.string }
+            .joined(separator: "\n")
+    }
+
+    static func convert(_ url: URL, format: OutputFormat, work: URL, password: String? = nil, progress: @escaping ProgressHandler) throws -> [Piece] {
+        let source = url
+        guard let doc = PDFDocument(url: url) else { throw ConvertError.readFailed }
+        if doc.isLocked {
+            guard let password, !password.isEmpty else { throw ConvertError.locked }
+            guard doc.unlock(withPassword: password) else { throw ConvertError.wrongPassword }
+        }
+
+        if format.key == "txt" || format.key == "docx" {
+            let isDocx = format.key == "docx"
+            // 텍스트 추출이 전체의 대부분, Word 조판이 마지막 구간
+            let extractShare = isDocx ? 0.85 : 1.0
+            let txt = work.appendingPathComponent(Converter.safeBaseName(source.deletingPathExtension().lastPathComponent) + ".txt")
+            try extractText(from: doc, to: txt) { progress($0 * extractShare) }
+            guard isDocx else { return [Piece(file: txt, suffix: "")] }
+            let out = work.appendingPathComponent("out.docx")
+            try TextConverter.convert(txt, key: "docx", to: out) { progress(extractShare + (1 - extractShare) * $0) }
             return [Piece(file: out, suffix: "")]
         }
 
         let count = doc.pageCount
         guard count > 0 else { throw ConvertError.readFailed }
-        guard count <= 500 else { throw ConvertError.tooManyPages }
+        guard count <= 2000 else { throw ConvertError.tooManyPages }
 
         var pieces: [Piece] = []
         for i in 0..<count {
             try checkCancelled()
             defer { progress(Double(i + 1) / Double(count)) }
-            guard let page = doc.page(at: i) else { continue }
+            try autoreleasepool {
+            guard let page = doc.page(at: i) else { return }
             let box = page.bounds(for: .mediaBox)
-            guard box.width > 0, box.height > 0 else { continue }
+            guard box.width > 0, box.height > 0 else { return }
 
             var scale: CGFloat = 2
             let longest = max(box.width, box.height)
@@ -505,6 +587,7 @@ enum PDFConverter {
                 try ImageConverter.writeRaster(cg, uti: UTType.png.identifier, to: out)
             }
             pieces.append(Piece(file: out, suffix: count == 1 ? "" : "-p\(i + 1)"))
+            }
         }
         guard !pieces.isEmpty else { throw ConvertError.readFailed }
         return pieces

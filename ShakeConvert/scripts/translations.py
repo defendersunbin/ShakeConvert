@@ -186,6 +186,12 @@ T = {
         "无法验证副本的签名，已取消安装。", "無法驗證副本的簽名，已取消安裝。",
         "No se pudo verificar la firma de la copia, así que se canceló la instalación.", "La signature de la copie n’a pas pu être vérifiée ; l’installation a été annulée.",
         "Die Signatur der Kopie konnte nicht überprüft werden. Die Installation wurde abgebrochen."],
+    "암호 입력": ["Password", "パスワード", "输入密码", "輸入密碼", "Contraseña", "Mot de passe", "Passwort"],
+    "잠금 해제": ["Unlock", "ロック解除", "解锁", "解鎖", "Desbloquear", "Déverrouiller", "Entsperren"],
+    "취소": ["Cancel", "キャンセル", "取消", "取消", "Cancelar", "Annuler", "Abbrechen"],
+    "암호가 맞지 않습니다": ["Incorrect password", "パスワードが違います", "密码不正确", "密碼不正確", "Contraseña incorrecta", "Mot de passe incorrect", "Falsches Passwort"],
+    "저장 공간이 부족합니다": ["Not enough free disk space", "空き容量が不足しています", "存储空间不足", "儲存空間不足", "No hay suficiente espacio libre", "Espace disque insuffisant", "Nicht genug freier Speicherplatz"],
+    "메모리가 부족해 변환할 수 없습니다": ["Not enough memory to convert this file", "メモリが不足しているため変換できません", "内存不足，无法转换", "記憶體不足，無法轉換", "No hay memoria suficiente para convertir este archivo", "Mémoire insuffisante pour convertir ce fichier", "Nicht genug Speicher für die Konvertierung"],
     "확인": ["OK", "OK", "好", "好", "Aceptar", "OK", "OK"],
 }
 

@@ -15,16 +15,6 @@ enum Category: String, CaseIterable {
         }
     }
 
-    /// 입력 파일 크기 상한 (메모리/디스크 고갈 방지)
-    var maxInputBytes: Int64 {
-        switch self {
-        case .image: return 256 * 1024 * 1024
-        case .text: return 32 * 1024 * 1024
-        case .pdf: return 512 * 1024 * 1024
-        case .audio: return 2 * 1024 * 1024 * 1024
-        case .video: return 16 * 1024 * 1024 * 1024
-        }
-    }
 }
 
 /// 변환 결과 형식 하나
@@ -107,6 +97,7 @@ enum Catalog {
             f(.text, "txt", L("텍스트"), aliases: ["txt", "text", "plain"]),
         ],
         .pdf: [
+            f(.pdf, "docx", "Word", aliases: ["word", L("워드"), "docx"]),
             f(.pdf, "png", "PNG", note: L("페이지별")),
             f(.pdf, "jpeg", "JPEG", ext: "jpg", note: L("페이지별"), aliases: ["jpg"]),
             f(.pdf, "txt", L("텍스트"), aliases: ["txt", "text", L("추출")]),
@@ -128,7 +119,7 @@ enum Catalog {
     private static let preferredOrder: [Category: [String]] = [
         .image: ["jpeg", "png", "heic", "pdf", "svg", "tiff", "gif", "bmp", "jp2"],
         .text: ["pdf", "rtf", "html", "docx", "txt"],
-        .pdf: ["png", "jpeg", "txt"],
+        .pdf: ["txt", "docx", "png", "jpeg"],
         .audio: ["m4a", "wav", "aiff", "caf"],
         .video: ["mp4", "mov", "m4a"],
     ]

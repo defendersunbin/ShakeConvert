@@ -31,6 +31,8 @@ enum Phase {
     case working(source: String, target: OutputFormat, since: Date)
     case done(source: String, target: OutputFormat, since: Date, name: String)
     case failed(message: String, source: String, target: OutputFormat, since: Date)
+    /// 암호가 걸린 PDF: 사용자가 암호를 입력할 때까지 기다림 (wrong: 방금 입력한 암호가 틀렸음)
+    case needsPassword(file: String, source: String, target: OutputFormat, since: Date, wrong: Bool)
 }
 
 @MainActor
@@ -50,6 +52,16 @@ final class PanelModel: ObservableObject {
     @Published var fileIndex = 0         // 지금 변환 중인 파일 (0부터)
     @Published var fileCount = 0
     private var conversionTask: Task<Void, Never>?
+    /// 암호 입력창에 쓰는 값. 화면에만 두고 저장·기록하지 않으며, 시도 직후 비운다.
+    @Published var passwordInput = ""
+    private struct Carry {
+        var format: OutputFormat
+        var source: String
+        var produced: [URL]
+        var errors: [String]
+        var queue: [URL]      // 암호가 필요한 파일들 (앞에서부터 차례로 묻는다)
+    }
+    private var carry: Carry?
     @Published var query = "" { didSet { updateLayout() } }
     @Published var mode: Mode = .quick { didSet { updateLayout() } }
 
@@ -57,10 +69,12 @@ final class PanelModel: ObservableObject {
     var onLayoutChange: ((Bool) -> Void)?
     var onFinished: ((Bool) -> Void)?
     var onClose: (() -> Void)?
+    var onNeedsPassword: (() -> Void)?
     private var lastWantsList = false
 
     var showsList: Bool { mode == .list || !query.isEmpty }
     var busy: Bool { if case .working = phase { return true } else { return false } }
+    var awaitingPassword: Bool { if case .needsPassword = phase { return true } else { return false } }
     var isIdle: Bool { if case .idle = phase { return true } else { return false } }
     var filtered: [OutputFormat] { allFormats.filter { $0.matches(query) } }
     var sourceExt: String { String((files.first?.pathExtension ?? "").uppercased().prefix(5)) }
@@ -87,6 +101,8 @@ final class PanelModel: ObservableObject {
         }
         phase = .idle
         outputs = []
+        carry = nil
+        passwordInput = ""
         query = ""
         mode = .quick
         lastWantsList = false
@@ -119,6 +135,8 @@ final class PanelModel: ObservableObject {
         drop.clear()
         conversionTask?.cancel()
         conversionTask = nil
+        carry = nil
+        passwordInput = ""
         progress = 0
         revealed = false
         dismissing = false
@@ -218,6 +236,7 @@ final class PanelModel: ObservableObject {
             let started = Date()
             var produced: [URL] = []
             var errors: [String] = []
+            var locked: [URL] = []
             var cancelled = false
 
             for (i, url) in urls.enumerated() {
@@ -230,9 +249,18 @@ final class PanelModel: ObservableObject {
                 } catch is CancellationError {
                     cancelled = true
                     break
+                } catch ConvertError.locked {
+                    locked.append(url) // 나머지를 먼저 끝내고, 암호가 필요한 파일은 마지막에 차례로 묻는다
                 } catch {
                     errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
                 }
+            }
+
+            if !cancelled && !locked.isEmpty {
+                let pending = (produced, errors, locked)
+                await self.askPassword(produced: pending.0, errors: pending.1, queue: pending.2,
+                                       source: source, format: format)
+                return
             }
 
             if !cancelled {
@@ -247,6 +275,88 @@ final class PanelModel: ObservableObject {
             await self.finish(produced: result.0, errors: result.1, cancelled: result.2,
                                source: source, format: format)
         }
+    }
+
+    // MARK: 암호가 걸린 PDF
+
+    private func askPassword(produced: [URL], errors: [String], queue: [URL], source: String, format: OutputFormat) {
+        conversionTask = nil
+        carry = Carry(format: format, source: source, produced: produced, errors: errors, queue: queue)
+        presentPasswordPrompt(wrong: false)
+    }
+
+    private func presentPasswordPrompt(wrong: Bool) {
+        guard let c = carry, let file = c.queue.first else { return }
+        passwordInput = ""
+        phase = .needsPassword(file: file.lastPathComponent, source: c.source, target: c.format,
+                               since: Date(), wrong: wrong)
+        onNeedsPassword?()
+        requestFocus()
+    }
+
+    /// 입력한 암호로 그 파일만 다시 변환한다.
+    func submitPassword() {
+        guard awaitingPassword, let c = carry, let file = c.queue.first, !passwordInput.isEmpty else { return }
+        let password = passwordInput
+        passwordInput = "" // 입력값은 즉시 비움
+        let format = c.format
+        progress = 0
+        fileIndex = 0
+        fileCount = 1
+        phase = .working(source: c.source, target: format, since: Date())
+
+        let reporter = ProgressReporter { [self] value in
+            Task { @MainActor in self.applyProgress(value) }
+        }
+        conversionTask = Task.detached(priority: .userInitiated) { [self] in
+            let result: Result<[URL], Error>
+            do {
+                result = .success(try await Converter.convert(file, to: format, password: password) { fraction in
+                    reporter.report(fraction)
+                })
+            } catch {
+                result = .failure(error)
+            }
+            await self.passwordAttemptFinished(result)
+        }
+    }
+
+    private func passwordAttemptFinished(_ result: Result<[URL], Error>) {
+        conversionTask = nil
+        guard var c = carry, !c.queue.isEmpty else { return }
+        switch result {
+        case .success(let urls):
+            c.produced += urls
+            c.queue.removeFirst()
+        case .failure(let error):
+            if error is CancellationError {
+                carry = nil
+                phase = .idle
+                close()
+                return
+            }
+            if let known = error as? ConvertError, case .wrongPassword = known {
+                presentPasswordPrompt(wrong: true) // 같은 파일에 다시 묻는다
+                return
+            }
+            let name = c.queue.removeFirst().lastPathComponent
+            c.errors.append("\(name): \(error.localizedDescription)")
+        }
+        carry = c
+        if c.queue.isEmpty {
+            carry = nil
+            finish(produced: c.produced, errors: c.errors, cancelled: false, source: c.source, format: c.format)
+        } else {
+            presentPasswordPrompt(wrong: false)
+        }
+    }
+
+    /// 암호 입력을 그만두면 전체를 취소하고 닫는다 (이미 끝난 파일은 그대로 남음).
+    func cancelPassword() {
+        carry = nil
+        passwordInput = ""
+        phase = .idle
+        close()
     }
 
     private func setFileIndex(_ index: Int) {
