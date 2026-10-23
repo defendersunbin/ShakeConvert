@@ -12,6 +12,8 @@
 |---|---|
 | <img width="340" height="418" alt="shakeconvert_dark" src="https://github.com/user-attachments/assets/1e8952e6-2d27-430e-a1e6-b7cf08564c3d" /> | <img width="340" height="418" alt="shakeconvert_light" src="https://github.com/user-attachments/assets/514d8afb-daa9-480f-a3f9-33d376b040ed" /> |
 
+https://github.com/user-attachments/assets/59c293a6-0b4b-4d3f-988c-6951e7b8e9c5
+
 ## 특징
 
 - 360° 링 메뉴: 커서가 링의 중심. 최대 7개 형식이 12시부터 시계 방향, `etc`는 항상 3시 방향
