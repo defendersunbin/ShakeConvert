@@ -87,9 +87,3 @@ Sources/ShakeConvert/
 Resources/               Info.plist, entitlements, 아이콘, DMG 배경, 번역(*.lproj)
 scripts/                 빌드, DMG, 보안 검사, 번역 생성·검사, 아이콘·배경 생성
 ```
-
-## 차후 수정
-
-- 3채널 이상 오디오의 WAV/AIFF/CAF 변환, 암호 PDF는 미지원
-- 애니메이션 GIF는 첫 프레임만 변환
-- 문서 → Word 변환 시 표·코드 상자 같은 일부 서식은 Word에서 단순화될 수 있음
