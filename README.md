@@ -12,9 +12,7 @@
 |---|---|
 | <img width="340" height="418" alt="shakeconvert_dark" src="https://github.com/user-attachments/assets/1e8952e6-2d27-430e-a1e6-b7cf08564c3d" /> | <img width="340" height="418" alt="shakeconvert_light" src="https://github.com/user-attachments/assets/514d8afb-daa9-480f-a3f9-33d376b040ed" /> |
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/d36dcb98-e797-4293-81ab-72da3d6f2e8c" width="360" controls muted loop playsinline></video>
-</p>
+<img width="400" height="545" alt="demo" src="https://github.com/user-attachments/assets/cb3736cf-548b-4b4e-8dd8-41cc4b1c3466" />
 
 ## 특징
 
